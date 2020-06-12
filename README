@@ -1,0 +1,21 @@
+ttcdt-sodium - Tool for asymmetric encryption of files using libsodium
+ttcdt <dev@triptico.com>
+This software is released into the public domain.
+
+Usage:
+
+  ttcdt-sodium -G -p pubkey -s seckey     Generate key pairs
+  ttcdt-sodium -R -p pubkey -s seckey     Regenerate pubkey from seckey
+  ttcdt-sodium -E -p pubkey               Encrypt STDIN to STDOUT
+  ttcdt-sodium -D -s seckey               Decrypt STDIN to STDOUT
+
+Examples:
+ (on desktop)
+ $ ttcdt-sodium -G -p ~/.key.pub -s ~/.key.sec
+ $ scp ~/.key.pub server:~/.key.pub
+ (on server, secret key not needed there)
+ $ (cd / && sudo tar czvf - etc/) | ttcdt-sodium -E -p ~/.key.pub > encrypted
+ (back on desktop, to restore)
+ $ ttcdt-sodium -D -s ~/.key.sec < encrypted > decrypted.tar.gz
+
+Both pubkey and seckey are ASCII base64 files.
