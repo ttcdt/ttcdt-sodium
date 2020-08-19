@@ -13,10 +13,10 @@
 
 #include <sodium.h>
 
-#define VERSION "1.02"
+#define VERSION "1.03"
 
 
-int read_base64_file(unsigned char *p, int size, char *fn)
+int read_key_file(unsigned char *p, int size, char *fn)
 /* reads a one-line base64 text file into buffer */
 {
     int ret = 0;
@@ -55,7 +55,7 @@ int read_base64_file(unsigned char *p, int size, char *fn)
 }
 
 
-int write_base64_file(unsigned char *p, int size, char *fn)
+int write_key_file(unsigned char *p, int size, char *fn)
 /* writes a buffer as a one-line base64 text file */
 {
     int ret = 0;
@@ -89,8 +89,8 @@ int generate_keys(char *pk_fn, char *sk_fn)
     crypto_box_keypair(pk, sk);
 
     /* write the secret and public keys */
-    return write_base64_file(sk, sizeof(sk), sk_fn) +
-           write_base64_file(pk, sizeof(pk), pk_fn);
+    return write_key_file(sk, sizeof(sk), sk_fn) +
+           write_key_file(pk, sizeof(pk), pk_fn);
 }
 
 
@@ -101,12 +101,12 @@ int rebuild_public_key(char *pk_fn, char *sk_fn)
     unsigned char sk[crypto_box_SECRETKEYBYTES];
 
     /* read the secret key */
-    if ((ret = read_base64_file(sk, sizeof(sk), sk_fn)) == 0) {
+    if ((ret = read_key_file(sk, sizeof(sk), sk_fn)) == 0) {
         /* recompute public key */
         crypto_scalarmult_base(pk, sk);
 
         /* write it */
-        ret = write_base64_file(pk, sizeof(pk), pk_fn);
+        ret = write_key_file(pk, sizeof(pk), pk_fn);
     }
 
     return ret;
@@ -125,7 +125,14 @@ int encrypt(FILE *i, FILE *o, char *pk_fn)
     unsigned char n[crypto_box_NONCEBYTES];
 
     /* read the public key file */
-    if ((ret = read_base64_file(pk, sizeof(pk), pk_fn)) == 0) {
+    if ((ret = read_key_file(pk, sizeof(pk), pk_fn)) == 0) {
+        /* write the signature */
+        tmp_pk[0] = 'n';
+        tmp_pk[1] = 'a';
+        tmp_pk[2] = 0x00;
+        tmp_pk[3] = 0x01;
+        fwrite(tmp_pk, 4, 1, o);
+
         /* create a disposable set of keys:
            the public one shall be inside the encrypted stream
            aside with the encrypted symmetric key */
@@ -187,67 +194,105 @@ int decrypt(FILE *i, FILE *o, char *sk_fn)
     unsigned char key[crypto_secretstream_xchacha20poly1305_KEYBYTES];
     unsigned char c[crypto_box_MACBYTES + crypto_secretstream_xchacha20poly1305_KEYBYTES];
     unsigned char n[crypto_box_NONCEBYTES];
+    unsigned char header[crypto_secretstream_xchacha20poly1305_HEADERBYTES];
+    crypto_secretstream_xchacha20poly1305_state st;
+    unsigned char bi[BLOCK_SIZE + crypto_secretstream_xchacha20poly1305_ABYTES];
+    unsigned char bo[BLOCK_SIZE];
+    int eof;
+    unsigned long long l;
+    unsigned char tag;
 
     /* read the secret key */
-    if ((ret = read_base64_file(sk, sizeof(sk), sk_fn)) == 0) {
-        /* read the header: public key + nonce + encrypted symmetric key */
-        if (fread(pk, sizeof(pk), 1, i) == 1 && fread(n, sizeof(n), 1, i) == 1 &&
-                                                fread(c, sizeof(c), 1, i) == 1) {
-            unsigned char header[crypto_secretstream_xchacha20poly1305_HEADERBYTES];
-            crypto_secretstream_xchacha20poly1305_state st;
-            unsigned char bi[BLOCK_SIZE + crypto_secretstream_xchacha20poly1305_ABYTES];
-            unsigned char bo[BLOCK_SIZE];
-            int eof;
-            unsigned long long l;
-            unsigned char tag;
+    if ((ret = read_key_file(sk, sizeof(sk), sk_fn)) != 0) {
+        ret = 11;
+        fprintf(stderr, "ERROR: (%d) cannot read sk file\n", ret);
+        goto end;
+    }
 
-            /* decrypt the symmetric key */
-            if (!crypto_box_open_easy(key, c, sizeof(c), n, pk, sk)) {
-                /* decrypt stream */
+    /* read 4 bytes */
+    if (fread(pk, 4, 1, i) != 1) {
+        ret = 20;
+        fprintf(stderr, "ERROR: (%d) unexpected EOF reading signature\n", ret);
+        goto end;
+    }
 
-                /* read header */
-                fread(header, sizeof(header), 1, i);
-
-                /* init decryption */
-                if (!crypto_secretstream_xchacha20poly1305_init_pull(&st, header, key)) {
-                    do {
-                        l = fread(bi, 1, sizeof(bi), i);
-                        eof = feof(i);
-
-                        if (crypto_secretstream_xchacha20poly1305_pull(&st, bo, &l, &tag,
-                                                       bi, l, NULL, 0)) {
-                            ret = 13;
-                            fprintf(stderr, "ERROR: (%d) corrupted chunk\n", ret);
-                            break;
-                        }
-
-                        if (tag == crypto_secretstream_xchacha20poly1305_TAG_FINAL && ! eof) {
-                            ret = 14;
-                            fprintf(stderr, "ERROR: (%d) premature end\n", ret);
-                            break;
-                        }
-
-                        fwrite(bo, 1, (size_t) l, o);
-                    } while (!eof);
-                }
-                else {
-                    ret = 12;
-                    fprintf(stderr, "ERROR: (%d) incomplete header\n", ret);
-                }
+    /* does it have a signature? */
+    if (pk[0] == 'n' && pk[1] == 'a' && pk[2] == 0x00) {
+        if (pk[3] == 0x01) {
+            /* it does; read a full key */
+            if (fread(pk, sizeof(pk), 1, i) != 1) {
+                ret = 20;
+                fprintf(stderr, "ERROR: (%d) unexpected EOF reading pk\n", ret);
+                goto end;
             }
-            else {
-                ret = 11;
-                fprintf(stderr, "ERROR: (%d) crypto_box_open_easy()\n", ret);
-            }
+        }
+        else {
+            ret = 30;
+            fprintf(stderr, "ERROR: (%d) bad signature\n", ret);
+            goto end;
         }
     }
     else {
-        ret = 10;
-        fprintf(stderr, "ERROR: (%d) cannot read header\n", ret);
+        /* no signature, so it's a stream in 0.0 format;
+           read the rest of the key */
+        if (fread(pk + 4, sizeof(pk) - 4, 1, i) != 1) {
+            ret = 20;
+            fprintf(stderr, "ERROR: (%d) unexpected EOF reading pk\n", ret);
+            goto end;
+        }
     }
 
+    /* read the nonce + encrypted symmetric key */
+    if (fread(n, sizeof(n), 1, i) == 1 && fread(c, sizeof(c), 1, i) == 1) {
+
+        /* decrypt the symmetric key */
+        if (!crypto_box_open_easy(key, c, sizeof(c), n, pk, sk)) {
+            /* decrypt stream */
+
+            /* read header */
+            fread(header, sizeof(header), 1, i);
+
+            /* init decryption */
+            if (!crypto_secretstream_xchacha20poly1305_init_pull(&st, header, key)) {
+                do {
+                    l = fread(bi, 1, sizeof(bi), i);
+                    eof = feof(i);
+
+                    if (crypto_secretstream_xchacha20poly1305_pull(&st, bo, &l, &tag,
+                                                   bi, l, NULL, 0)) {
+                        ret = 13;
+                        fprintf(stderr, "ERROR: (%d) corrupted chunk\n", ret);
+                        break;
+                    }
+
+                    if (tag == crypto_secretstream_xchacha20poly1305_TAG_FINAL && ! eof) {
+                        ret = 14;
+                        fprintf(stderr, "ERROR: (%d) premature end\n", ret);
+                        break;
+                    }
+
+                    fwrite(bo, 1, (size_t) l, o);
+                } while (!eof);
+            }
+            else {
+                ret = 12;
+                fprintf(stderr, "ERROR: (%d) incomplete header\n", ret);
+            }
+        }
+        else {
+            ret = 11;
+            fprintf(stderr, "ERROR: (%d) crypto_box_open_easy()\n", ret);
+        }
+    }
+    else {
+        ret = 20;
+        fprintf(stderr, "ERROR: (%d) unexpected EOF reading header\n", ret);
+    }
+
+end:
     return ret;
 }
+
 
 char *usage_str="\
 ttcdt <dev@triptico.com>\n\
