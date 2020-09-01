@@ -13,7 +13,7 @@
 
 #include <sodium.h>
 
-#define VERSION "1.03"
+#define VERSION "1.04"
 
 
 int read_key_file(unsigned char *p, int size, char *fn)
@@ -35,19 +35,19 @@ int read_key_file(unsigned char *p, int size, char *fn)
 
             if (sodium_base642bin(p, size, base64, l, "", NULL, NULL,
                                   sodium_base64_VARIANT_ORIGINAL) != 0) {
-                ret = 4;
+                ret = 2;
                 fprintf(stderr, "ERROR: (%d) sodium_base642bin() in '%s'\n", ret, fn);
             }
         }
         else {
-            ret = 3;
+            ret = 2;
             fprintf(stderr, "ERROR: (%d) empty key in '%s'\n", ret, fn);
         }
 
         fclose(f);
     }
     else {
-        ret = 1;
+        ret = 2;
         fprintf(stderr, "ERROR: (%d) cannot open '%s'\n", ret, fn);
     }
 
@@ -72,7 +72,7 @@ int write_key_file(unsigned char *p, int size, char *fn)
         fclose(f);
     }
     else {
-        ret = 1;
+        ret = 3;
         fprintf(stderr, "ERROR: (%d) cannot create '%s'\n", ret, fn);
     }
 
@@ -177,7 +177,7 @@ int encrypt(FILE *i, FILE *o, char *pk_fn)
             } while (!eof);
         }
         else {
-            ret = 10;
+            ret = 4;
             fprintf(stderr, "ERROR: (%d) crypto_box_easy()\n", ret);
         }
     }
@@ -203,15 +203,12 @@ int decrypt(FILE *i, FILE *o, char *sk_fn)
     unsigned char tag;
 
     /* read the secret key */
-    if ((ret = read_key_file(sk, sizeof(sk), sk_fn)) != 0) {
-        ret = 11;
-        fprintf(stderr, "ERROR: (%d) cannot read sk file\n", ret);
+    if ((ret = read_key_file(sk, sizeof(sk), sk_fn)) != 0)
         goto end;
-    }
 
     /* read 4 bytes */
     if (fread(pk, 4, 1, i) != 1) {
-        ret = 20;
+        ret = 2;
         fprintf(stderr, "ERROR: (%d) unexpected EOF reading signature\n", ret);
         goto end;
     }
@@ -221,13 +218,13 @@ int decrypt(FILE *i, FILE *o, char *sk_fn)
         if (pk[3] == 0x01) {
             /* it does; read a full key */
             if (fread(pk, sizeof(pk), 1, i) != 1) {
-                ret = 20;
+                ret = 2;
                 fprintf(stderr, "ERROR: (%d) unexpected EOF reading pk\n", ret);
                 goto end;
             }
         }
         else {
-            ret = 30;
+            ret = 2;
             fprintf(stderr, "ERROR: (%d) bad signature\n", ret);
             goto end;
         }
@@ -236,7 +233,7 @@ int decrypt(FILE *i, FILE *o, char *sk_fn)
         /* no signature, so it's a stream in 0.0 format;
            read the rest of the key */
         if (fread(pk + 4, sizeof(pk) - 4, 1, i) != 1) {
-            ret = 20;
+            ret = 2;
             fprintf(stderr, "ERROR: (%d) unexpected EOF reading pk\n", ret);
             goto end;
         }
@@ -260,32 +257,37 @@ int decrypt(FILE *i, FILE *o, char *sk_fn)
 
                     if (crypto_secretstream_xchacha20poly1305_pull(&st, bo, &l, &tag,
                                                    bi, l, NULL, 0)) {
-                        ret = 13;
+                        ret = 4;
                         fprintf(stderr, "ERROR: (%d) corrupted chunk\n", ret);
                         break;
                     }
 
                     if (tag == crypto_secretstream_xchacha20poly1305_TAG_FINAL && ! eof) {
-                        ret = 14;
+                        ret = 2;
                         fprintf(stderr, "ERROR: (%d) premature end\n", ret);
                         break;
                     }
 
-                    fwrite(bo, 1, (size_t) l, o);
+                    if (fwrite(bo, 1, (size_t) l, o) != l) {
+                        ret = 3;
+                        fprintf(stderr, "ERROR: (%d) write error\n", ret);
+                        break;
+                    }
+
                 } while (!eof);
             }
             else {
-                ret = 12;
+                ret = 2;
                 fprintf(stderr, "ERROR: (%d) incomplete header\n", ret);
             }
         }
         else {
-            ret = 11;
+            ret = 4;
             fprintf(stderr, "ERROR: (%d) crypto_box_open_easy()\n", ret);
         }
     }
     else {
-        ret = 20;
+        ret = 2;
         fprintf(stderr, "ERROR: (%d) unexpected EOF reading header\n", ret);
     }
 
@@ -368,7 +370,7 @@ int main(int argc, char *argv[])
             ret = usage();
     }
     else {
-        ret = 100;
+        ret = 4;
         fprintf(stderr, "ERROR: (%d) cannot initialize libsodium\n", ret);
     }
 

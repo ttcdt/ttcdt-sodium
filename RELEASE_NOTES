@@ -1,0 +1,13 @@
+Release Notes
+=============
+
+1.04
+----
+
+ - Better error handling.
+ - The exit codes have been simplified and are:
+    - 0: OK
+    - 1: Bad command line arguments (usage)
+    - 2: Read error
+    - 3: Write error
+    - 4: Crypto error
