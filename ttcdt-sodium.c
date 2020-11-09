@@ -13,7 +13,7 @@
 
 #include <sodium.h>
 
-#define VERSION "1.04"
+#define VERSION "1.05"
 
 
 int read_key_file(unsigned char *p, int size, char *fn)
@@ -320,11 +320,12 @@ Both pubkey and seckey are ASCII base64 files.";
 
 int usage(void)
 {
-    printf("ttcdt-sodium %s - Tool for asymmetric encryption of files using libsodium\n",
+    fprintf(stderr,
+        "ttcdt-sodium %s - Tool for asymmetric encryption of files using libsodium\n",
         VERSION);
-    printf("%s\n", usage_str);
+    fprintf(stderr, "%s\n", usage_str);
 
-    return 200;
+    return 1;
 }
 
 

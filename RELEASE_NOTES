@@ -1,6 +1,11 @@
 Release Notes
 =============
 
+1.05
+----
+
+ - Dump help screen to stderr
+
 1.04
 ----
 
