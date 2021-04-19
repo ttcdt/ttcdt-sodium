@@ -13,7 +13,7 @@
 
 #include <sodium.h>
 
-#define VERSION "1.05"
+#define VERSION "1.06"
 
 
 int read_key_file(unsigned char *p, int size, char *fn)
@@ -225,18 +225,14 @@ int decrypt(FILE *i, FILE *o, char *sk_fn)
         }
         else {
             ret = 2;
-            fprintf(stderr, "ERROR: (%d) bad signature\n", ret);
+            fprintf(stderr, "ERROR: (%d) signature for another format (%02x)\n", ret, pk[3]);
             goto end;
         }
     }
     else {
-        /* no signature, so it's a stream in 0.0 format;
-           read the rest of the key */
-        if (fread(pk + 4, sizeof(pk) - 4, 1, i) != 1) {
-            ret = 2;
-            fprintf(stderr, "ERROR: (%d) unexpected EOF reading pk\n", ret);
-            goto end;
-        }
+        ret = 2;
+        fprintf(stderr, "ERROR: (%d) bad signature\n", ret);
+        goto end;
     }
 
     /* read the nonce + encrypted symmetric key */

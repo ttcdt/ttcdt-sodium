@@ -1,18 +1,31 @@
 Release Notes
 =============
 
+1.06
+----
+
+* Important Changes:
+
+Dropped support for format #0.
+
 1.05
 ----
 
- - Dump help screen to stderr
+* Improvements:
+
+Dump help screen to stderr.
 
 1.04
 ----
 
- - Better error handling.
- - The exit codes have been simplified and are:
-    - 0: OK
-    - 1: Bad command line arguments (usage)
-    - 2: Read error
-    - 3: Write error
-    - 4: Crypto error
+* Improvements:
+
+Better error handling.
+
+The exit codes have been simplified and are:
+
+    0: OK
+    1: Bad command line arguments (usage)
+    2: Read error
+    3: Write error
+    4: Crypto error

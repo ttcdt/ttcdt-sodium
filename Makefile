@@ -1,7 +1,7 @@
 PREFIX=/usr/local
 
 ttcdt-sodium: ttcdt-sodium.c
-	$(CC) -g -Wall $< -I$(PREFIX)/include -L$(PREFIX)/lib -lsodium -o $@
+	$(CC) -g -Wall $< `pkg-config --cflags --libs libsodium` -o $@
 
 install:
 	install -m 755 ttcdt-sodium $(PREFIX)/bin/ttcdt-sodium
